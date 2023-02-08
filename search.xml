@@ -1,6 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>记录一些Vue的用法经验</title>
+    <url>/2023/01/04/vue-use/</url>
+    <content><![CDATA[<p>实用的Vue用法</p>
+<span id="more"></span>
+
+<h3 id="方法内监听并销毁组件"><a href="#方法内监听并销毁组件" class="headerlink" title="方法内监听并销毁组件"></a>方法内监听并销毁组件</h3><pre><code class="highlight plaintext">mounted: function () &#123;
+  this.attachDatepicker(&#x27;startDateInput&#x27;)
+  this.attachDatepicker(&#x27;endDateInput&#x27;)
+&#125;,
+methods: &#123;
+  attachDatepicker: function (refName) &#123;
+    var picker = new Pikaday(&#123;
+      field: this.$refs[refName],
+      format: &#x27;YYYY-MM-DD&#x27;
+    &#125;)
+
+    this.$once(&#x27;hook:beforeDestroy&#x27;, function () &#123;
+      picker.destroy()
+    &#125;)
+  &#125;
+&#125;</code></pre>
+
+]]></content>
+      <tags>
+        <tag>Vue</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>方向包围盒（obb）碰撞检测</title>
     <url>/2022/03/04/obb/</url>
     <content><![CDATA[<p>最近在项目当中遇到一个需求，也是一个我们平常十分常见的操作，那就是框选操作，但是对于正常元素来说，我们只需要计算框选框是否包裹了当前的目标元素就可以知道当前元素是否选中，但是项目中的元素会存在旋转的情况，所以计算起来就会有些复杂了，所以就抽了些时间深入的了解了一下，也在这里记录记录</p>
@@ -224,34 +252,6 @@ console.log(detectorOBBvsOBB(OBB1, OBB2))</code></pre>
 ]]></content>
       <tags>
         <tag>算法</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>记录一些Vue的用法经验</title>
-    <url>/2023/01/04/vue-use/</url>
-    <content><![CDATA[<p>实用的Vue用法</p>
-<span id="more"></span>
-
-<h3 id="方法内监听并销毁组件"><a href="#方法内监听并销毁组件" class="headerlink" title="方法内监听并销毁组件"></a>方法内监听并销毁组件</h3><pre><code class="highlight plaintext">mounted: function () &#123;
-  this.attachDatepicker(&#x27;startDateInput&#x27;)
-  this.attachDatepicker(&#x27;endDateInput&#x27;)
-&#125;,
-methods: &#123;
-  attachDatepicker: function (refName) &#123;
-    var picker = new Pikaday(&#123;
-      field: this.$refs[refName],
-      format: &#x27;YYYY-MM-DD&#x27;
-    &#125;)
-
-    this.$once(&#x27;hook:beforeDestroy&#x27;, function () &#123;
-      picker.destroy()
-    &#125;)
-  &#125;
-&#125;</code></pre>
-
-]]></content>
-      <tags>
-        <tag>Vue</tag>
       </tags>
   </entry>
 </search>
