@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>方向包围盒（obb）碰撞检测</title>
+    <url>/2022/03/04/obb/</url>
+    <content><![CDATA[<p>最近在项目当中遇到一个需求，也是一个我们平常十分常见的操作，那就是框选操作，但是对于正常元素来说，我们只需要计算框选框是否包裹了当前的目标元素就可以知道当前元素是否选中，但是项目中的元素会存在旋转的情况，所以计算起来就会有些复杂了，所以就抽了些时间深入的了解了一下，也在这里记录记录</p>
+<blockquote>
+<p>最终代码可见 <a href="https://xwj-r.github.io/custom/obb.html">方向包围盒（OBB）</a>  这个在线示例</p>
+</blockquote>
+<span id="more"></span>
+<h3 id="问题由来"><a href="#问题由来" class="headerlink" title="问题由来"></a>问题由来</h3><p>需求如下，也就是我们平常接触到的框选操作，但是元素可能是旋转的，可以如下图所示</p>
+<p><img src="/2022/03/04/obb/31-01.png"></p>
+<p>如上图，<code>A</code> 元素我们可以认为是鼠标操作生成的拖拽框，<code>B</code> 元素是我们的目标元素，问题就是如何判断当前 <code>A</code> 元素与 <code>B</code> 元素是否相交，周末研究了一番后发现，这应该是属于 2D 图形碰撞检测的范畴，在游戏开发场景当中遇到较多，但是在这里我们也可以采用相同的逻辑来进行解决</p>
+<p>在 2D 游戏中，通常使用矩形、圆形等来代替复杂图形的相交检测，因为这两种形状的碰撞检测速度是最快的，其中矩形包围盒又可以分为两种，如下</p>
+<p>轴对齐包围盒（<code>AABB，Axis Aligned Bounding Box</code>）<br>转向包围盒（<code>OBB，Oriented Bounding Box</code>）</p>
+<p><code>AABB</code> 与 <code>OBB</code> 的区别在于，<code>AABB</code> 中的矩形的其中一条边和坐标轴平行，<code>OBB</code> 的计算复杂度要高于 <code>AABB</code>，根据不同的使用场景，可以用不同的方案，但是本章当中我们不会太过深入，仅仅来看矩形包围盒，也就是『轴对齐包围盒』与『转向包围盒』这两种情况，但是在具体展开之前，我们先来看看向量的相关内容</p>
+<h3 id="向量"><a href="#向量" class="headerlink" title="向量"></a>向量</h3><p>向量作为一种数学工具，在碰撞检测中发挥很大作用，我们的计算都是通过向量来完成，所以先来了解一些向量的相关知识</p>
+<h6 id="向量的代数表示"><a href="#向量的代数表示" class="headerlink" title="向量的代数表示"></a>向量的代数表示</h6><p>向量的代数表示指在指定了一个坐标系之后，用一个向量在该坐标系下的坐标来表示该向量，兼具了符号的抽象性和几何形象性，因而具有最高的实用性，被广泛采用于需要定量分析的情形，对于自由向量，将向量的起点平移到坐标原点后，向量就可以用一个坐标系下的一个点来表示，该点的坐标值即向量的终点坐标</p>
+<p><img src="/2022/03/04/obb/31-02.png"></p>
+<pre><code class="highlight plaintext">// 二维平面向量
+class Vector2d &#123;
+  constructor(vx = 1, vy = 1) &#123;
+    this.vx = vx
+    this.vy = vy
+  &#125;
+&#125;
+
+const vecA = new Vector2d(1, 2)
+const vecB = new Vector2d(3, 1)</code></pre>
+<p>下面我们再来看看向量之间的运算</p>
+<h6 id="加法"><a href="#加法" class="headerlink" title="加法"></a>加法</h6><p>向量的加法满足平行四边形法则和三角形法则，两向量相加还是一个向量，如下，分别是 x 与 y 两个分量的相加</p>
+<p><img src="/2022/03/04/obb/31-03.png"></p>
+<pre><code class="highlight plaintext">// 向量的加法运算
+static add(vec, vec2)&#123;
+  const vx = vec.vx + vec2.vx
+  const vy = vec.vy + vec2.vy
+  return new Vector2d(vx, vy)
+&#125;</code></pre>
+
+<h6 id="减法"><a href="#减法" class="headerlink" title="减法"></a>减法</h6><p>两个向量 a 和 b 的相减得到的向量可以表示为 a 和 b 的起点重合后，从 b 的终点指向 a 的终点的向量</p>
+<p><img src="/2022/03/04/obb/31-04.png"></p>
+<pre><code class="highlight plaintext">// 向量的减法运算
+static sub(vec, vec2)&#123;
+  const vx = vec.vx - vec2.vx
+  const vy = vec.vy - vec2.vy
+  return new Vector2d(vx, vy)
+&#125;</code></pre>
+<h6 id="大小"><a href="#大小" class="headerlink" title="大小"></a>大小</h6><pre><code class="highlight plaintext">// 获取向量长度
+length()&#123;
+  return Math.sqrt(this.vx * this.vx + this.vy * this.vy)
+&#125;</code></pre>
+<h6 id="点积"><a href="#点积" class="headerlink" title="点积"></a>点积</h6><p>从代数角度看，先对两个数字序列中的每组对应元素求积，再对所有积求和，结果即为点积</p>
+<pre><code class="highlight plaintext">// 向量的数量积
+static dot(vec, vec2)&#123;
+  return vec.vx * vec2.vx + vec.vy * vec2.vy
+&#125;</code></pre>
+<h6 id="旋转"><a href="#旋转" class="headerlink" title="旋转"></a>旋转</h6><p>向量的旋转可以用旋转矩阵求解</p>
+<p><img src="/2022/03/04/obb/31-05.png"></p>
+<pre><code class="highlight plaintext">// 向量的旋转 
+static rotate(vec, angle)&#123;
+  const cosVal = Math.cos(angle)
+  const sinVal = Math.sin(angle)
+  const vx = vec.vx * cosVal - vec.vy * sinVal
+  const vy = vec.vx * sinVal + vec.vy * cosVal
+  return new Vector2d(vx, vy)
+&#125;</code></pre>
+<p>在了解完向量相关内容以后，我们就可以来使用向量来表示我们的基本矩形，定义一个矩形需要中心坐标 x 和 y、两边长宽 w 和 h，还有中心的旋转角度 <code>rotation</code></p>
+<pre><code class="highlight plaintext">export class Rect &#123;
+  // x 和 y 是矩形中心的坐标，w 和 h 是宽高，r 是旋转角度，单位为 deg
+  constructor(x = 0, y = 0, w = 1, h = 1, r = 0) &#123;
+    this.x = x
+    this.y = y
+    this.w = w
+    this.h = h
+    this.r = r
+  &#125;
+&#125;</code></pre>
+
+<p>在了解完上面的内容以后，下面我们就来具体看看两矩形相交的情况</p>
+<h3 id="轴对齐包围盒（AABB）"><a href="#轴对齐包围盒（AABB）" class="headerlink" title="轴对齐包围盒（AABB）"></a>轴对齐包围盒（AABB）</h3><p>也就是如下图所示的情况<br><img src="/2022/03/04/obb/31-06.png"><br>针对于两个『无旋转』的矩形相交，我们应该如何来进行判断碰撞呢？比如我们定义了两个矩形，并且第一个物体的碰撞外形以某种形式进入了第二个物体的碰撞外形，在这种情况之下，我们就可以认为两者碰撞，也就是当两个矩形进入对方的区域时就会发生碰撞，针对于这种情况，也就是上面我们提到的 <code>AABB</code> 类型来说很容易判断，因为它们是与坐标轴对齐的</p>
+<p>对于每个轴我们要检测两个物体的边界在此轴向是否有重叠，因此我们只需要简单地检查两个物体的『水平边界』以及『垂直边界』是否重合，如果『水平边界和垂直边界都有重叠』那么我们就认为两者是碰撞的<br><img src="/2022/03/04/obb/31-07.png"><br>将这一概念转化为代码也是很直白的，我们对两个轴都检测是否重叠，如果都重叠就返回碰撞，因为都是不旋转的元素，所以这里我们不用考虑 <code>rotation</code> 这个参数</p>
+<pre><code class="highlight plaintext">// selectionRect  拖拽框
+// element        元素节点
+// scroll         是否需要计算滚动条距离
+function AABB(selectionRect, element, scroll) &#123;
+  var rect = element.getBoundingClientRect()
+  var elementRect = &#123;
+    y: rect.top + scroll.y,
+    x: rect.left + scroll.x,
+    h: rect.height,
+    w: rect.width
+  &#125;
+  if (
+    selectionRect.x &lt; elementRect.x + elementRect.w &amp;&amp;
+    selectionRect.x + selectionRect.w &gt; elementRect.x &amp;&amp;
+    selectionRect.y &lt; elementRect.y + elementRect.h &amp;&amp;
+    selectionRect.h + selectionRect.y &gt; elementRect.y
+  ) &#123;
+    return true
+  &#125; else &#123;
+    return false
+  &#125;
+&#125;</code></pre>
+<p>我们检查『第一个物体的最右侧是否大于第二个物体的最左侧』并且『第二个物体的最右侧是否大于第一个物体的最左侧』，垂直的轴向与此相似，所以我们就可以根据此方法来判断两个矩形是否相交，这种方式的碰撞检测相对是比较简单的，下面我们再来看看比较复杂的情况，也就是转向包围盒（<code>OBB</code>）</p>
+<h3 id="转向包围盒（OBB）"><a href="#转向包围盒（OBB）" class="headerlink" title="转向包围盒（OBB）"></a>转向包围盒（OBB）</h3><p>这种情况也就是我们开头部分所看到的情形<br><img src="/2022/03/04/obb/31-01.png"><br>针对于这种情况，两个矩形的 <code>OBB</code> 检测我们可以使用分离轴定理（<code>Separating Axis Theorem</code>）来进行解决，所谓分离轴定理，即通过判断任意两个矩形在『任意角度下的投影是否均存在重叠』来判断是否发生碰撞，若在某一角度光源下，两物体的投影存在间隙，则为不碰撞，否则为发生碰撞，因为矩形的对边平行，所以只要判断四条对称轴上的投影即可（这也可以扩展到任意多边形）</p>
+<p>比如下图当中的四周轴线之上对应的红蓝线条<br><img src="/2022/03/04/obb/31-08.png"><br>至于如何投影？我们在这里来补充一些向量点积的几何意义<br><img src="/2022/03/04/obb/31-09.png"><br>在欧几里得空间中，点积可以直观地定义为 <code>A·B = |A||B|cosθ</code>，其中 <code>|A|cosθ</code> 是 <code>A</code> 到 <code>B</code> 的投影，如果 <code>B</code> 是单位向量，那么 <code>A·B</code> 就是 <code>A</code> 到单位向量 <code>B</code> 的投影，如果放到矩形上，我们将矩形 <code>4</code> 个顶点都投影到对称轴上，分别将其点乘即可<br><img src="/2022/03/04/obb/31-10.png"><br>其实归纳一下判定方式，简单的来说就是</p>
+<blockquote>
+<p>如果两个多边形在所有轴上的投影都发生重叠，则判定为碰撞，否则没有发生碰撞</p>
+</blockquote>
+<p>下面我们来看看如何用代码来进行实现，当然 <code>OBB</code> 存在多种的表达方式，我们这里使用比较常见的一种方式，即一个中心点、2 个矩形的边长、两个旋转轴（该轴垂直于多边形自身的边，用于投影计算），也就是我们在上面向量章节当中定义的矩形的扩展形式，代码如下所示，注意这里就需要使用 <code>rotation</code> 这个参数了</p>
+<pre><code class="highlight plaintext">class OBB &#123;
+  constructor(centerPoint, width, height, rotation) &#123;
+    this.centerPoint = centerPoint
+    this.extents = [width / 2, height / 2]
+    this.axes = [new Vector2(Math.cos(rotation), Math.sin(rotation)), new Vector2(-1 * Math.sin(rotation), Math.cos(rotation))]
+    this._width = width
+    this._height = height
+    this._rotation = rotation
+  &#125;
+&#125;</code></pre>
+<p>其所依赖的 <code>Vector2</code> 这个类如下所示</p>
+<pre><code class="highlight plaintext">class Vector2 &#123;
+  constructor(x, y) &#123;
+    this.x = x || 0
+    this.y = y || 0
+  &#125;
+  sub(v) &#123;
+    return new Vector2(this.x - v.x, this.y - v.y)
+  &#125;
+  dot(v) &#123;
+    return this.x * v.x + this.y * v.y
+  &#125;
+&#125;</code></pre>
+<p>然后基于这个数据结构，进行 <code>OBB</code> 之间的相交测试，我们为 <code>OBB</code> 扩展一个方法，即返回在任意轴上的投影半径</p>
+<pre><code class="highlight plaintext">getProjectionRadius(axis) &#123;
+  return this.extents[0] * Math.abs(axis.dot(this.axes[0])) + this.extents[1] * Math.abs(axis.dot(this.axes[1]))
+&#125;</code></pre>
+<p>这里我们需要注意 <code>Vector2.dot</code> 这个方法，也就是我们在上面提到的点积</p>
+<blockquote>
+<p>若 b 为单位矢量，则 a 与 b 的点积即为 a 在方向 b 的投影</p>
+</blockquote>
+<p>在有了这些了解以后我们就可以来进行相交检测，由上面的判定方式，我们可以得出，两个矩形之间的碰撞检测需要判断四次（即每个投影轴一次），完整检测代码如下所示</p>
+<pre><code class="highlight plaintext">const detectorOBBvsOBB = (OBB1, OBB2) =&gt; &#123;
+  var nv = OBB1.centerPoint.sub(OBB2.centerPoint)
+  var axisA1 = OBB1.axes[0]
+  if (OBB1.getProjectionRadius(axisA1) + OBB2.getProjectionRadius(axisA1) &lt;= Math.abs(nv.dot(axisA1))) return false
+  var axisA2 = OBB1.axes[1]
+  if (OBB1.getProjectionRadius(axisA2) + OBB2.getProjectionRadius(axisA2) &lt;= Math.abs(nv.dot(axisA2))) return false
+  var axisB1 = OBB2.axes[0]
+  if (OBB1.getProjectionRadius(axisB1) + OBB2.getProjectionRadius(axisB1) &lt;= Math.abs(nv.dot(axisB1))) return false
+  var axisB2 = OBB2.axes[1]
+  if (OBB1.getProjectionRadius(axisB2) + OBB2.getProjectionRadius(axisB2) &lt;= Math.abs(nv.dot(axisB2))) return false
+  return true
+&#125;</code></pre>
+<p>我们在这里拿两个 <code>OBB</code> 的中心点连线在坐标轴上的投影长度和两个矩形投影半径之和进行对比，如果半径之后都小于或者等于中心连线之后才判定为碰撞，否则判定为分离状态</p>
+<p>完整代码如下，在线示例可以参考文章开头部分的链接</p>
+<pre><code class="highlight plaintext">
+// OBB 算法
+class OBB &#123;
+  constructor(centerPoint, width, height, rotation) &#123;
+    this.centerPoint = centerPoint
+    this.extents = [width / 2, height / 2]
+    this.axes = [new Vector2(Math.cos(rotation), Math.sin(rotation)), new Vector2(-1 * Math.sin(rotation), Math.cos(rotation))]
+    this._width = width
+    this._height = height
+    this._rotation = rotation
+  &#125;
+  getProjectionRadius(axis) &#123;
+    return this.extents[0] * Math.abs(axis.dot(this.axes[0])) + this.extents[1] * Math.abs(axis.dot(this.axes[1]))
+  &#125;
+&#125;
+
+class Vector2 &#123;
+  constructor(x, y) &#123;
+    this.x = x || 0
+    this.y = y || 0
+  &#125;
+  sub(v) &#123;
+    return new Vector2(this.x - v.x, this.y - v.y)
+  &#125;
+  dot(v) &#123;
+    return this.x * v.x + this.y * v.y
+  &#125;
+&#125;
+
+const detectorOBBvsOBB = (OBB1, OBB2) =&gt; &#123;
+  var nv = OBB1.centerPoint.sub(OBB2.centerPoint)
+  var axisA1 = OBB1.axes[0]
+  if (OBB1.getProjectionRadius(axisA1) + OBB2.getProjectionRadius(axisA1) &lt;= Math.abs(nv.dot(axisA1))) return false
+  var axisA2 = OBB1.axes[1]
+  if (OBB1.getProjectionRadius(axisA2) + OBB2.getProjectionRadius(axisA2) &lt;= Math.abs(nv.dot(axisA2))) return false
+  var axisB1 = OBB2.axes[0]
+  if (OBB1.getProjectionRadius(axisB1) + OBB2.getProjectionRadius(axisB1) &lt;= Math.abs(nv.dot(axisB1))) return false
+  var axisB2 = OBB2.axes[1]
+  if (OBB1.getProjectionRadius(axisB2) + OBB2.getProjectionRadius(axisB2) &lt;= Math.abs(nv.dot(axisB2))) return false
+  return true
+&#125;
+
+const OBB1Options = &#123;
+  x: 355,
+  y: 430,
+  w: 350,
+  h: 150,
+  r: 0
+&#125;
+
+const OBB2Options = &#123;
+  x: 575,
+  y: 295,
+  w: 350,
+  h: 150,
+  r: 220
+&#125;
+
+const OBB1 = new OBB(new Vector2(OBB1Options.x, OBB1Options.y), OBB1Options.w, OBB1Options.h, OBB1Options.r * Math.PI / 180)
+const OBB2 = new OBB(new Vector2(OBB2Options.x, OBB2Options.y), OBB2Options.w, OBB2Options.h, OBB2Options.r * Math.PI / 180)
+
+console.log(detectorOBBvsOBB(OBB1, OBB2))</code></pre>
+<h3 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h3><ul>
+<li><a href="https://developer.mozilla.org/zh-CN/docs/Games/Techniques/2D_collision_detection">2D collision detection</a></li>
+<li><a href="https://www.cnblogs.com/iamzhanglei/archive/2012/06/07/2539751.html">方向包围盒（OBB）碰撞检测</a></li>
+<li><a href="https://juejin.cn/post/6844903928501387277#heading-10">碰撞检测的向量实现</a></li>
+</ul>
+]]></content>
+      <tags>
+        <tag>算法</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>记录一些Vue的用法经验</title>
+    <url>/2023/01/04/vue-use/</url>
+    <content><![CDATA[<p>实用的Vue用法</p>
+<span id="more"></span>
+
+<h3 id="方法内监听并销毁组件"><a href="#方法内监听并销毁组件" class="headerlink" title="方法内监听并销毁组件"></a>方法内监听并销毁组件</h3><pre><code class="highlight plaintext">mounted: function () &#123;
+  this.attachDatepicker(&#x27;startDateInput&#x27;)
+  this.attachDatepicker(&#x27;endDateInput&#x27;)
+&#125;,
+methods: &#123;
+  attachDatepicker: function (refName) &#123;
+    var picker = new Pikaday(&#123;
+      field: this.$refs[refName],
+      format: &#x27;YYYY-MM-DD&#x27;
+    &#125;)
+
+    this.$once(&#x27;hook:beforeDestroy&#x27;, function () &#123;
+      picker.destroy()
+    &#125;)
+  &#125;
+&#125;</code></pre>
+
+]]></content>
+      <tags>
+        <tag>Vue</tag>
+      </tags>
+  </entry>
+</search>
